@@ -1,0 +1,2 @@
+document.querySelectorAll('[data-tab]').forEach(button=>button.addEventListener('click',()=>{const group=button.closest('[data-tabs]');group.querySelectorAll('[data-tab]').forEach(b=>{b.classList.toggle('active',b===button);b.setAttribute('aria-selected',b===button?'true':'false')});group.querySelectorAll('.tabcontent').forEach(p=>p.hidden=p.id!==button.dataset.tab)}));
+const selected=new URLSearchParams(location.search).get("tab");if(selected){const b=document.querySelector(`[data-tab="${selected}"]`);if(b)b.click();}
