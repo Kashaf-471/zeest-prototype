@@ -156,6 +156,13 @@ def test_ownership_inputs_jobs_drafts(clients, monkeypatch):
     assert a.get(f"/api/inputs/{job['input_id']}/file").content == out.getvalue()
 
 
+def test_research_report_endpoint_rejects_images_without_touching_clinical_flow(clients):
+    doctor, _ = clients
+    response = doctor.post("/api/research/report-experiments/analyze", files={"file": ("scan.jpg", b"\xff\xd8\xff\xdb" + b"0" * 20, "image/jpeg")}, data={"method": "rules"})
+    assert response.status_code == 422
+    assert "chest X-ray specialist" in response.json()["detail"]
+
+
 def test_revision_approval_rejection_and_restart(clients):
     a, b = clients
     p, e = context(a)
@@ -224,41 +231,18 @@ def test_source_changes_block_stale_draft_and_notes(clients):
     )
 
 
-def test_upload_and_unknown_mapping_and_csrf(clients):
-    a, b = clients
-    p, e = context(a)
-    assert (
-        a.post(
-            f"/api/encounters/{e}/uploads", files={"file": ("bad.exe", b"bad")}
-        ).status_code
-        == 422
+def test_physician_inputs_are_editable_and_csrf_is_enforced(clients):
+    a, _ = clients
+    _, e = context(a)
+    assert a.post(
+        f"/api/encounters/{e}/uploads", files={"file": ("bad.exe", b"bad")}
+    ).status_code == 403
+    saved = a.post(
+        f"/api/encounters/{e}/inputs",
+        json={"kind": "laboratory", "content": "Physician supplied value"},
     )
-    assert (
-        a.post(
-            f"/api/encounters/{e}/uploads", files={"file": ("fake.png", b"not png")}
-        ).status_code
-        == 422
-    )
-    r = a.post(
-        f"/api/encounters/{e}/uploads",
-        files={"file": ("unknown.txt", b"Arbitrary test input", "text/plain")},
-    )
-    assert r.status_code == 200
-    result = a.post(
-        f"/api/encounters/{e}/findings", json={"scenario": "routine"}
-    ).json()
-    assert (
-        next(f for f in result["findings"] if f["input_id"] == r.json()["id"])[
-            "finding"
-        ]
-        == "No simulated analysis mapped to this input"
-    )
-    assert (
-        a.post(
-            f"/api/encounters/{e}/inputs", json={"kind": "laboratory", "content": "  "}
-        ).status_code
-        == 422
-    )
+    assert saved.status_code == 200
+    assert saved.json()["content"] == "Physician supplied value"
     token = a.headers.pop("x-csrf-token")
     assert (
         a.post(f"/api/encounters/{e}/drafts", json={"scenario": "routine"}).status_code
@@ -381,3 +365,269 @@ def test_workspace_overview_is_owner_scoped_and_reports_real_counts(clients):
         )
         assert summary["metrics"]["approved"] == len(summary["decisions"])
     assert TestClient(app).get("/api/workspace").status_code == 401
+
+
+def test_admin_registers_assigns_and_reassigns_patient(clients):
+    doctor_one, doctor_two = clients
+    admin = TestClient(app)
+    login = admin.post(
+        "/api/auth/login",
+        json={"email": "admin@example.com", "password": "ZeestAdmin!2026"},
+    )
+    assert login.status_code == 200, login.text
+    assert login.json()["physician"]["role"] == "admin"
+    admin.headers["x-csrf-token"] = login.json()["csrf"]
+    workspace = admin.get("/api/admin/workspace").json()
+    doctors = {row["email"]: row for row in workspace["physicians"]}
+    created = admin.post(
+        "/api/admin/patients",
+        json={
+            "name": "Admin Flow Patient",
+            "info": "Synthetic record only. Age 44. Allergy: none documented.",
+            "physician_id": doctors["doctor1@example.com"]["id"],
+        },
+    )
+    assert created.status_code == 201, created.text
+    patient_id = created.json()["id"]
+    consultation = admin.post(
+        f"/api/admin/patients/{patient_id}/consultations",
+        json={
+            "date": "2026-10-21",
+            "title": "Initial consultation",
+            "laboratory": "HbA1c 5.8%, supplied by administrator",
+            "medication": "Metformin 500 mg daily, supplied by administrator",
+        },
+    )
+    assert consultation.status_code == 201, consultation.text
+    consultation_id = consultation.json()["id"]
+    upload = admin.post(
+        f"/api/admin/consultations/{consultation_id}/uploads",
+        data={"kind": "laboratory"},
+        files={"file": ("lab.png", b"\x89PNG\r\n\x1a\nreport", "image/png")},
+    )
+    assert upload.status_code == 201, upload.text
+    assert upload.json()["kind"] == "laboratory"
+    source_id = upload.json()["id"]
+    physician_view = doctor_one.get(f"/api/encounters/{consultation_id}")
+    assert physician_view.status_code == 200, physician_view.text
+    assert any(row["id"] == source_id for row in physician_view.json()["inputs"])
+    assert any(
+        row["kind"] == "laboratory" and row["content"].startswith("HbA1c")
+        for row in physician_view.json()["inputs"]
+    )
+    assert doctor_one.get(f"/api/inputs/{source_id}/file").content.endswith(b"report")
+    assert admin.get(f"/api/inputs/{source_id}/file").status_code == 200
+    missed = admin.post(
+        f"/api/admin/patients/{patient_id}/consultations",
+        json={"date": "2020-01-01", "title": "Missed consultation"},
+    )
+    assert missed.status_code == 201, missed.text
+    missed_id = missed.json()["id"]
+    summary = doctor_one.get("/api/workspace").json()
+    missed_row = next(row for row in summary["encounters"] if row["id"] == missed_id)
+    assert missed_row["lifecycle"] == "NOT_ATTENDED"
+    assert missed_row["resumable"] is False
+    assert any(row["id"] == patient_id for row in doctor_one.get("/api/patients").json())
+    assert doctor_two.get(f"/api/patients/{patient_id}").status_code == 404
+    updated = admin.put(
+        f"/api/admin/patients/{patient_id}",
+        json={
+            "name": "Admin Flow Patient",
+            "info": "Synthetic record only. Reassigned for workflow verification.",
+            "physician_id": doctors["doctor2@example.com"]["id"],
+        },
+    )
+    assert updated.status_code == 200, updated.text
+    assert doctor_one.get(f"/api/patients/{patient_id}").status_code == 404
+    assert doctor_two.get(f"/api/patients/{patient_id}").status_code == 200
+    assert doctor_one.get("/api/admin/workspace").status_code == 403
+    assert admin.get("/api/patients").status_code == 403
+
+
+
+def test_admin_clinical_report_upload_saves_structured_nlp_for_assigned_physician(clients):
+    physician, other_physician = clients
+    _, encounter_id = context(physician)
+    admin = TestClient(app)
+    login = admin.post(
+        "/api/auth/login",
+        json={"email": "admin@example.com", "password": "ZeestAdmin!2026"},
+    )
+    assert login.status_code == 200, login.text
+    admin.headers["x-csrf-token"] = login.json()["csrf"]
+    uploaded = admin.post(
+        f"/api/admin/consultations/{encounter_id}/uploads",
+        data={"kind": "clinical_report"},
+        files={
+            "file": (
+                "synthetic-clinical-report.txt",
+                b"Patient has diabetes. No evidence of pneumonia. Possible asthma.",
+                "text/plain",
+            )
+        },
+    )
+    assert uploaded.status_code == 201, uploaded.text
+    source = uploaded.json()
+    assert source["kind"] == "clinical_report"
+    saved = __import__("json").loads(source["content"])
+    assert saved["research_only"] is True
+    assert saved["result"]["findings"]
+    mentions = [
+        mention
+        for finding in saved["result"]["findings"]
+        for mention in finding["value"]["mentions"]
+    ]
+    assert {mention["text"] for mention in mentions} >= {
+        "diabetes",
+        "pneumonia",
+        "asthma",
+    }
+    assert physician.get(f"/api/encounters/{encounter_id}").json()["inputs"][-1]["id"] == source["id"]
+    entered_text = "History of diabetes. No evidence of pneumonia. Possible asthma."
+    entered = admin.post(
+        f"/api/admin/consultations/{encounter_id}/reports",
+        json={"text": entered_text},
+    )
+    assert entered.status_code == 201, entered.text
+    entered_content = __import__("json").loads(entered.json()["content"])
+    assert entered_content["source_text"] == entered_text
+    assert entered_content["result"]["findings"]
+    assert not {"atelectasis", "cardiomegaly", "consolidation", "edema", "pleural_effusion"} & {
+        finding["code"] for finding in entered_content["result"]["findings"]
+    }
+    physician_inputs = physician.get(f"/api/encounters/{encounter_id}").json()["inputs"]
+    assert any(row["id"] == entered.json()["id"] for row in physician_inputs)
+    assert other_physician.get(f"/api/encounters/{encounter_id}").status_code == 404
+
+
+def test_complete_consultation_history_is_persisted(clients):
+    doctor, _ = clients
+    patient_id, consultation_id = context(doctor)
+    current = doctor.get(f"/api/encounters/{consultation_id}").json()
+    note = doctor.post(
+        f"/api/encounters/{consultation_id}/notes",
+        json={
+            "expected_version": current["encounter"]["version"],
+            "transcript": "Persisted consultation transcript",
+            "subjective": "Persisted subjective note",
+            "objective": "Persisted objective note",
+            "assessment": "Persisted physician assessment",
+            "plan": "Persisted physician plan",
+        },
+    )
+    assert note.status_code == 200, note.text
+    admin = TestClient(app)
+    login = admin.post(
+        "/api/auth/login",
+        json={"email": "admin@example.com", "password": "ZeestAdmin!2026"},
+    )
+    admin.headers["x-csrf-token"] = login.json()["csrf"]
+    laboratory = admin.post(
+        f"/api/admin/consultations/{consultation_id}/uploads",
+        data={"kind": "laboratory"},
+        files={
+            "file": (
+                "persisted-lab.txt",
+                b"Persisted test 4.2 mmol/L",
+                "text/plain",
+            )
+        },
+    )
+    assert laboratory.status_code == 201, laboratory.text
+    findings_response = doctor.post(
+        f"/api/encounters/{consultation_id}/findings",
+        json={"scenario": "routine"},
+    )
+    assert findings_response.status_code == 200, findings_response.text
+    draft = generate(doctor, consultation_id)
+    patient_name = doctor.get(f"/api/patients/{patient_id}").json()["patient"]["name"]
+    assert patient_name in draft["diagnosis"]
+    assert "Persisted physician assessment" in draft["diagnosis"]
+    assert "Persisted physician plan" in draft["treatment"]
+    approved = review(doctor, consultation_id, draft, "APPROVE")
+    assert approved.status_code == 200, approved.text
+    saved = doctor.get(f"/api/encounters/{consultation_id}").json()
+    latest_note = [row for row in saved["inputs"] if row["kind"] == "notes"][-1]
+    assert json_content(latest_note)["plan"] == "Persisted physician plan"
+    history = doctor.get(f"/api/encounters/{consultation_id}/history").json()
+    row = next(item for item in history["history"] if item["encounter_id"] == consultation_id)
+    assert row["progress"] == {
+        "notes": True,
+        "clinical_inputs": True,
+        "review": True,
+        "decision": True,
+    }
+    assert any(item["id"] == laboratory.json()["id"] for item in row["sources"])
+    assert row["findings"] and row["drafts"] and row["approved_decisions"]
+    profile = doctor.get(f"/api/patients/{patient_id}").json()
+    consultation = next(item for item in profile["encounters"] if item["id"] == consultation_id)
+    assert consultation["note_count"] > 0
+    assert consultation["input_count"] > 0
+    assert consultation["draft_count"] > 0
+    assert consultation["decision_count"] > 0
+    assert consultation["lifecycle"] == "COMPLETED"
+    assert consultation["resumable"] is False
+
+
+def test_patient_memory_retrieves_prior_inputs_only_and_enforces_ownership(clients):
+    doctor, other_doctor = clients
+    patient_id = doctor.get("/api/patients").json()[0]["id"]
+    profile = doctor.get(f"/api/patients/{patient_id}").json()
+    visits = sorted(profile["encounters"], key=lambda item: (item["date"], item["id"]))
+    assert len(visits) >= 2
+    earlier, current = visits[0], visits[-1]
+    response = doctor.post(
+        f"/api/patients/{patient_id}/memory",
+        json={"encounter_id": current["id"], "query": "intermittent cough", "top_k": 5, "mode": "keyword"},
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["indexed_sources"] == 3
+    assert body["retrieval_mode"] == "keyword"
+    assert body["result"]["findings"]
+    assert all(item["value"]["encounter_id"] == str(earlier["id"]) for item in body["result"]["findings"])
+    assert all("lexical cosine similarity" == item["value"]["score_type"] for item in body["result"]["findings"])
+    assert "not diagnostic probability" in body["result"]["limitations"][0]
+    assert other_doctor.post(
+        f"/api/patients/{patient_id}/memory",
+        json={"encounter_id": current["id"], "query": "cough", "mode": "keyword"},
+    ).status_code == 404
+    assert doctor.post(
+        f"/api/patients/{patient_id}/memory",
+        json={"encounter_id": profile["encounters"][-1]["id"] + 99999, "query": "cough", "mode": "keyword"},
+    ).status_code == 404
+
+
+
+def test_patient_memory_semantic_route_and_keyword_comparison(clients, monkeypatch):
+    doctor, _ = clients
+    patient_id = doctor.get("/api/patients").json()[0]["id"]
+    profile = doctor.get(f"/api/patients/{patient_id}").json()
+    visits = sorted(profile["encounters"], key=lambda item: (item["date"], item["id"]))
+    earlier, current = visits[0], visits[-1]
+    with SessionLocal.begin() as session:
+        session.add(Input(
+            encounter_id=earlier["id"], kind="notes",
+            content='{"subjective":"Wheezing was heard during the earlier visit."}',
+        ))
+
+    class FakeScorer:
+        name = "synthetic-test-scorer"
+        revision = "test"
+
+        def score(self, query, documents):
+            assert query == "whistling sound"
+            return [0.99 if "wheezing" in text.lower() else 0.05 for text in documents]
+
+    import main
+    monkeypatch.setattr(main, "_get_patient_memory_scorer", lambda: FakeScorer())
+    response = doctor.post(
+        f"/api/patients/{patient_id}/memory",
+        json={"encounter_id": current["id"], "query": "whistling sound", "mode": "semantic"},
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["model"]["name"] == "synthetic-test-scorer"
+    assert body["result"]["findings"][0]["value"]["encounter_id"] == str(earlier["id"])
+    assert body["result"]["findings"][0]["value"]["score_type"] == "embedding cosine similarity"
+    assert body["keyword_baseline"] == []

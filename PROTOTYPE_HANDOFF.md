@@ -52,7 +52,7 @@ Use Zeest with capital Z. Avoid em dashes in interface text and documentation.
 | Notes | Actual transcript display, correction and saved note revisions |
 | Clinical inputs | Actual upload/input forms and persisted file or structured-data references |
 | Analysis | Fixed synthetic imaging, laboratory and medication responses selected by demo scenario |
-| Memory | Real patient history queries; simulated semantic relevance with fixed scenario mappings |
+| Memory | Real patient history queries with local MedEmbed semantic retrieval and an exact keyword baseline; synthetic-only retrieval evaluation |
 | Diagnosis/treatment | Hardcoded scenario-specific clinical drafts, not model-generated diagnoses |
 | Evidence/critic | Explicitly labelled illustrative evidence and simulated critic findings |
 | Review | Real modify/reject/approve actions, revision checks and transaction boundaries |
