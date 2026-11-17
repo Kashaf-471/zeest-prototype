@@ -1,9 +1,13 @@
 "use client";
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { Icon, Avatar } from "./ui";
+import { Icon, Avatar, ZeestLogo } from "./ui";
 import { OverviewView, PatientDetail } from "./overview-view";
 import { EncounterView } from "./encounter-view";
+import { AdminView } from "./admin-view";
+import { ReportExperimentsView } from "./report-experiments-view";
+import { PatientMemoryView } from "./patient-memory-view";
+import { MimicResearchView } from "./mimic-research-view";
 export function WorkspaceView({ m }: { m: any }) {
   const [mobile, setMobile] = useState(false);
   useEffect(() => {
@@ -68,8 +72,11 @@ export function WorkspaceView({ m }: { m: any }) {
   const nav = [
     ["/dashboard", "dashboard", "Dashboard"],
     ["/patients", "patients", "My Patients"],
+    ["/patient-memory", "records", "Patient Memory"],
     ["/reviews", "review", "Review Queue"],
     ["/records", "records", "Patient Records"],
+    ["/model-experiments", "review", "Model Experiments"],
+    ["/mimic-research", "records", "MIMIC Note Research"],
   ];
   const section = m.pid
     ? "My Patients"
@@ -77,11 +84,15 @@ export function WorkspaceView({ m }: { m: any }) {
         {
           "/dashboard": "Overview",
           "/patients": "Patient directory",
+          "/patient-memory": "Patient history retrieval",
           "/reviews": "Clinical worklist",
           "/records": "Longitudinal records",
           "/guide": "Help and orientation",
+          "/model-experiments": "Research tools",
+          "/mimic-research": "MIMIC note research",
         } as any
       )[m.route] || "Workspace";
+  if (!m.isAuth && m.user?.role === "admin") return <AdminView m={m} />;
   return (
     <div
       className={m.isAuth ? "auth-layout" : "app-layout"}
@@ -107,8 +118,8 @@ export function WorkspaceView({ m }: { m: any }) {
             inert={mobile && !m.menuOpen}
           >
             <Link className="brand" href="/dashboard">
-              <span className="brand-symbol">+</span>
-              <span>
+              <span className="brand-symbol"><ZeestLogo size={38} /></span>
+              <span className="brand-copy">
                 Zeest<small>PHYSICIAN WORKSPACE</small>
               </span>
             </Link>
@@ -156,13 +167,6 @@ export function WorkspaceView({ m }: { m: any }) {
                 Workspace Guide
                 <Icon name="arrow" size={15} />
               </Link>
-              <div className="sidebar-demo">
-                <span className="demo-dot" />
-                <div>
-                  <strong>Local demo environment</strong>
-                  <p>Simulated clinical analysis</p>
-                </div>
-              </div>
               <div className="sidebar-account">
                 <Avatar name={m.user?.name || "Physician"} small />
                 <div>
@@ -197,10 +201,6 @@ export function WorkspaceView({ m }: { m: any }) {
                 <strong>{section}</strong>
               </div>
               <div className="topbar-right">
-                <span className="local-status">
-                  <i />
-                  Local workspace
-                </span>
                 <Link href="/guide" className="icon-button" aria-label="Help">
                   <Icon name="help" size={21} />
                 </Link>
@@ -224,6 +224,12 @@ export function WorkspaceView({ m }: { m: any }) {
                 </div>
               ) : m.eid ? (
                 <EncounterView m={m} />
+              ) : m.route === "/model-experiments" ? (
+                <ReportExperimentsView m={m} />
+              ) : m.route === "/patient-memory" ? (
+                <PatientMemoryView m={m} />
+              ) : m.route === "/mimic-research" ? (
+                <MimicResearchView m={m} />
               ) : m.pid ? (
                 <PatientDetail m={m} />
               ) : (
@@ -231,7 +237,7 @@ export function WorkspaceView({ m }: { m: any }) {
               )}
               <footer>
                 Zeest physician workspace
-                <span>Synthetic records · Local processing</span>
+                <span>Clinical records · Physician review</span>
               </footer>
             </main>
           </div>
@@ -311,8 +317,8 @@ function AuthView({ m }: { m: any }) {
     <>
       <div className="auth-column">
         <Link href="/login" className="brand auth-brand">
-          <span className="brand-symbol">+</span>
-          <span>
+          <span className="brand-symbol"><ZeestLogo size={38} /></span>
+          <span className="brand-copy">
             Zeest<small>PHYSICIAN WORKSPACE</small>
           </span>
         </Link>
@@ -406,44 +412,24 @@ function AuthView({ m }: { m: any }) {
               {m.route === "/signup" ? "Log In" : "Create an account"}
             </Link>
           </p>
-          {m.route === "/login" ? (
-            <details className="demo-access">
-              <summary>Explore with a demo physician</summary>
-              <p>Load a synthetic account, then select Log In.</p>
-              <div className="demo-accounts">
-                {[1, 2].map((n) => (
-                  <button
-                    key={n}
-                    type="button"
-                    onClick={() => {
-                      m.setAuthEmail(`doctor${n}@example.com`);
-                      m.setAuthPassword("ZeestDemo!2026");
-                    }}
-                  >
-                    Physician {n}
-                    <Icon name="arrow" size={15} />
-                  </button>
-                ))}
-              </div>
-            </details>
-          ) : (
+          {m.route === "/signup" ? (
             <p className="hint">
               New accounts begin with an empty patient directory.
             </p>
-          )}
+          ) : null}
           <div className="auth-security">
             <Icon name="shield" size={16} />
-            Local access · Physician-owned records
+            Secure access · Physician-owned records
           </div>
         </main>
-        <div className="auth-copyright">Zeest · Local clinical prototype</div>
+        <div className="auth-copyright">Zeest · Clinical workspace</div>
       </div>
       <aside className="auth-art">
         <div className="auth-art-overlay" />
         <div className="auth-art-caption">
           <span className="glass-label">
             <span className="demo-dot" />
-            Local demo · Simulated clinical analysis
+            Physician-controlled clinical support
           </span>
           <h2>
             Your patient context.
@@ -452,12 +438,12 @@ function AuthView({ m }: { m: any }) {
           </h2>
           <p>
             Consultation notes, clinical inputs and physician decisions, brought
-            together across encounters.
+            together across consultations.
           </p>
           <div className="auth-pill-row">
             <span>
               <Icon name="mic" size={16} />
-              Local transcription
+              Private transcription
             </span>
             <span>
               <Icon name="shield" size={16} />

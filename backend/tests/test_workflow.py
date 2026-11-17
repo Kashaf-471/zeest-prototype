@@ -1,4 +1,4 @@
-import os, sys, tempfile
+import json, os, sys, tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -631,3 +631,59 @@ def test_patient_memory_semantic_route_and_keyword_comparison(clients, monkeypat
     assert body["result"]["findings"][0]["value"]["encounter_id"] == str(earlier["id"])
     assert body["result"]["findings"][0]["value"]["score_type"] == "embedding cosine similarity"
     assert body["keyword_baseline"] == []
+
+
+def test_mimic_research_view_reads_local_jsonl_without_demo_import(clients, tmp_path, monkeypatch):
+    doctor, _ = clients
+    structured = tmp_path / "zeest_structured"
+    structured.mkdir()
+    row = {
+        "note_id": "synthetic-note-01",
+        "subject_id": "synthetic-subject-01",
+        "hadm_id": "synthetic-admission-01",
+        "note_type": "RR",
+        "charttime": "2099-01-01",
+        "full_text": "must not be returned",
+        "agent_result": {
+            "method": "synthetic test extractor",
+            "status": "needs_review",
+            "limitations": ["synthetic test only"],
+            "findings": [
+                {
+                    "code": "cough",
+                    "label": "Cough",
+                    "assertion": "present",
+                    "explanation": "Present Cough: synthetic source phrase",
+                    "value": {
+                        "concept_type": "symptom",
+                        "mentions": [
+                            {
+                                "text": "cough",
+                                "sentence": "Synthetic report describes cough.",
+                                "assertion": "present",
+                                "temporality": "current",
+                                "experiencer": "patient",
+                                "method": "synthetic-test",
+                                "start": 1,
+                            }
+                        ],
+                    },
+                }
+            ],
+        },
+    }
+    (structured / "radiology_findings.jsonl").write_text(
+        json.dumps(row) + "\n", encoding="utf-8"
+    )
+    monkeypatch.setenv("ZEEST_MIMIC_STRUCTURED_DIR", str(structured))
+
+    response = doctor.get("/api/research/mimic-note/results?table=radiology&limit=25")
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["research_only"] is True
+    assert body["demo_patient_records_unchanged"] is True
+    assert body["records"][0]["findings"][0]["mentions"][0]["text"] == "cough"
+    assert "full_text" not in response.text
+    assert doctor.get(
+        "/api/research/mimic-note/results?table=radiology&limit=26"
+    ).status_code == 422

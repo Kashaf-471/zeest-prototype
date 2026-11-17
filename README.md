@@ -83,6 +83,31 @@ The physician workspace includes a separate **Model Experiments** page to test t
 
 By default, the backend expects the modular project at `../zeest_FYP/Fyp-Zeest` relative to this checkout. If needed, set `ZEEST_REPORT_MODULE_ROOT` to that folder. The page displays `results/report_ner_training.json` when authenticated. `auto` uses the rules and available local checkpoint, `rules` forces the baseline, and `model` requires `models/report_ner`. The benchmark uses PubMed abstracts and is not clinical-report validation.
 
+## Local MIMIC-IV-Note research screen
+
+The **MIMIC Note Research** page displays up to 25 locally generated Report NLP outputs. It is separate from demo patients and does not write to the application database. Each credentialed researcher must use their own authorized local dataset copy. Keep the app bound to `127.0.0.1`; do not expose it on a network or share screenshots, report snippets, or derived records.
+
+First generate local structured output from the modular project:
+
+```powershell
+$datasetDir = "C:\path\to\mimic-iv-note-deidentified-free-text-clinical-notes-2.2"
+cd ..\..\zeest_FYP\Fyp-Zeest
+python -m zeest.mimic_note_structuring `
+  --dataset-dir $datasetDir `
+  --table radiology --limit 25
+```
+
+Then, in the backend terminal, set the local output folder before starting or restarting FastAPI:
+
+```powershell
+$datasetDir = "C:\path\to\mimic-iv-note-deidentified-free-text-clinical-notes-2.2"
+$env:ZEEST_MIMIC_STRUCTURED_DIR = Join-Path $datasetDir "zeest_structured"
+cd ..\..\fyp_prototype\zeest-prototype
+.\backend\start.ps1
+```
+
+Start the frontend as usual and open `/mimic-research`. Choose radiology or discharge summaries, then select **Load structured results**. If the environment variable is unset or the result file is missing, the screen shows setup guidance from the backend. This research view is explicitly enabled by the local path; it is not part of patient records, and is not a separate app account or role. The results are exploratory extractions, not validated findings or diagnoses.
+
 
 ### Admin upload to physician Report NLP record
 

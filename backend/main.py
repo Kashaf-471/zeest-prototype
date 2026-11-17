@@ -2,6 +2,7 @@ import json, secrets, hashlib, uuid, os, sys, csv, io
 from datetime import datetime, timedelta, timezone
 from contextlib import asynccontextmanager
 from html.parser import HTMLParser
+from pathlib import Path
 from typing import Literal
 from fastapi import (
     FastAPI,
@@ -9,6 +10,7 @@ from fastapi import (
     HTTPException,
     Request,
     Response,
+    Query,
     UploadFile,
     File,
     Form,
@@ -312,6 +314,92 @@ def report_experiment_results(u=Depends(physician)):
         return json.loads(results_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         fail(503, "Report NLP experiment results could not be read.")
+
+
+@app.get("/api/research/mimic-note/results")
+def mimic_note_research_results(
+    table: Literal["radiology", "discharge"] = "radiology",
+    limit: int = Query(default=25, ge=1, le=25),
+    u=Depends(physician),
+):
+    """Read local MIMIC structuring output for an explicitly enabled research view.
+
+    This endpoint is authenticated, loopback-only with the prototype server,
+    and never imports records into application patient/encounter tables.
+    """
+    configured = os.environ.get("ZEEST_MIMIC_STRUCTURED_DIR", "").strip()
+    if not configured:
+        fail(
+            503,
+            "MIMIC research view is not enabled. Set ZEEST_MIMIC_STRUCTURED_DIR to the local zeest_structured folder and restart the backend.",
+        )
+    structured_dir = Path(configured).expanduser().resolve()
+    result_path = structured_dir / f"{table}_findings.jsonl"
+    if not result_path.is_file():
+        fail(
+            404,
+            f"No local {table} results found. Run the Fyp-Zeest MIMIC note structuring command first.",
+        )
+    records = []
+    try:
+        with result_path.open("r", encoding="utf-8") as source:
+            for line in source:
+                if len(records) >= limit:
+                    break
+                if not line.strip():
+                    continue
+                raw = json.loads(line)
+                agent_result = raw.get("agent_result") or {}
+                findings_out = []
+                for finding in agent_result.get("findings") or []:
+                    value = finding.get("value") or {}
+                    findings_out.append(
+                        {
+                            "code": finding.get("code"),
+                            "label": finding.get("label"),
+                            "assertion": finding.get("assertion"),
+                            "concept_type": value.get("concept_type"),
+                            "explanation": finding.get("explanation"),
+                            "mentions": [
+                                {
+                                    key: mention.get(key)
+                                    for key in (
+                                        "text",
+                                        "sentence",
+                                        "assertion",
+                                        "temporality",
+                                        "experiencer",
+                                        "method",
+                                    )
+                                }
+                                for mention in value.get("mentions") or []
+                            ],
+                        }
+                    )
+                records.append(
+                    {
+                        "note_id": raw.get("note_id"),
+                        "subject_id": raw.get("subject_id"),
+                        "hadm_id": raw.get("hadm_id"),
+                        "note_type": raw.get("note_type"),
+                        "charttime": raw.get("charttime"),
+                        "method": agent_result.get("method"),
+                        "status": agent_result.get("status"),
+                        "limitations": agent_result.get("limitations") or [],
+                        "findings": findings_out,
+                    }
+                )
+    except (OSError, json.JSONDecodeError, TypeError, AttributeError):
+        fail(503, "The local MIMIC result file could not be read as valid structured output.")
+    return {
+        "dataset": "MIMIC-IV-Note",
+        "table": table,
+        "records": records,
+        "count": len(records),
+        "limit": limit,
+        "research_only": True,
+        "demo_patient_records_unchanged": True,
+    }
 
 
 @app.post("/api/research/report-experiments/analyze")

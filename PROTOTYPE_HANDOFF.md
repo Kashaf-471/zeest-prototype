@@ -36,7 +36,7 @@ The original proposal defines the eventual research project. The report explains
 
 If the report describes Gemini, RAG, imaging inference, embeddings, agent frameworks or deployment, that describes the eventual system. Do not implement or call those services in this prototype. Record this distinction in the application README and feature-status matrix. Do not modify the report to claim that simulated processing is real.
 
-Physician is the ONLY application actor. No administrator, patient login, researcher, evaluation user or additional account type. The student team and supervisor are project stakeholders, not application roles. Do not restore UC22, G16, a comparative-evaluation page or its navigation.
+Physician is the ONLY application actor. No administrator, patient login, researcher, evaluation user or additional account type. The student team and supervisor are project stakeholders, not application roles. Do not restore UC22, G16, a comparative-evaluation page or its navigation. A separately requested MIMIC-IV-Note research-only screen is an explicit local-only exception; it uses physician authentication and never imports dataset records into demo patients.
 
 Use Zeest with capital Z. Avoid em dashes in interface text and documentation.
 
@@ -150,7 +150,7 @@ Persist these logical records, using the report data dictionary as a guide witho
 - Evidence/critic fixtures associated with the reviewed revision.
 - Review action and accepted clinical decision.
 
-Do not add an evaluation actor or evaluation UI. Evaluation metadata in the eventual research schema need not become prototype application tables unless required for an actual demonstrated feature.
+Do not add an evaluation actor or evaluation UI for comparative evaluation. The explicitly requested MIMIC note research screen is a separate local-only tool enabled by a local output path, not a new role or patient workflow. Evaluation metadata in the eventual research schema need not become prototype application tables unless required for an actual demonstrated feature.
 
 Provide API groups for authentication, own patients/encounters/history, uploads/notes/transcription status, analysis fixtures, draft retrieval/modification/approval/rejection, approved decisions and audit history. Return consistent validation and error responses. Do not leak another physician's data by changing an identifier.
 
@@ -197,7 +197,7 @@ Build the complete local Zeest prototype in this workspace. Read PROTOTYPE_HANDO
 
 Implement both the Next.js/TypeScript frontend and Python/FastAPI backend. Use persisted synthetic data and deterministic, clearly labelled clinical fixtures. Make registration, login/logout, physician-owned patient records, consultation recording, actual local speech-to-text, editable saved notes, uploads, draft revisions, approval/rejection, accepted decisions and audit history functional end to end.
 
-Physician is the only application actor. No admin, patient account, research role or evaluation page. No hosted LLM calls, cloud speech calls or deployment. Local speech-model inference is required. Do not fake transcription or imply that hardcoded medical outputs analyse arbitrary new inputs. Reuse the existing simple GUI designs and assets; no fresh Stitch generation is required.
+Physician is the only application actor. No admin, patient account, or research role. A user-requested local MIMIC-IV-Note research-only screen may display locally generated results without linking them to demo patients. No hosted LLM calls, cloud speech calls or deployment. Local speech-model inference is required. Do not fake transcription or imply that hardcoded medical outputs analyse arbitrary new inputs. Reuse the existing simple GUI designs and assets; no fresh Stitch generation is required.
 
 Begin with a short implementation plan and explicit assumptions, then carry the implementation through to a runnable, verified result. Follow the handoff's acceptance checks. If a dependency or microphone cannot be verified, report the precise limitation and finish unaffected work. Keep reference files unchanged. Finish with local startup commands, demo credentials, test results and a truthful list of implemented versus simulated features. Do not stop after scaffolding, a plan or static mockups. Do not commit, push or deploy.
 ```
