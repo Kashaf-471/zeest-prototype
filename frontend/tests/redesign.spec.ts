@@ -41,7 +41,7 @@ test("dashboard, search, unsaved changes, accessible tabs and responsive navigat
   await expect(page.locator(".patient-directory-row")).toHaveCount(1);
   await page.locator(".patient-directory-row").click();
   await page
-    .getByRole("link", { name: "Open Encounter", exact: true })
+    .getByRole("link", { name: /^(Open|View) Consultation/ })
     .first()
     .click();
   await expect(
@@ -53,7 +53,7 @@ test("dashboard, search, unsaved changes, accessible tabs and responsive navigat
     page.getByText("Unsaved changes", { exact: true }),
   ).toBeVisible();
   await page
-    .getByRole("navigation", { name: "Encounter workflow" })
+    .getByRole("navigation", { name: "Consultation workflow" })
     .getByRole("link", { name: "Clinical Inputs", exact: true })
     .click();
   await expect(

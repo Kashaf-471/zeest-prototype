@@ -31,6 +31,7 @@ export default function Workspace() {
     [error, setError] = useState(""),
     [message, setMessage] = useState("");
   const [overview, setOverview] = useState<any>(null),
+    [adminData, setAdminData] = useState<any>(null),
     [query, setQuery] = useState(""),
     [menuOpen, setMenuOpen] = useState(false),
     [noteTab, setNoteTab] = useState("transcript"),
@@ -40,6 +41,10 @@ export default function Workspace() {
     [savedNotes, setSavedNotes] = useState(JSON.stringify(emptyNotes)),
     [pendingHref, setPendingHref] = useState(""),
     [inputValues, setInputValues] = useState<Record<string, string>>({
+      laboratory: "",
+      medication: "",
+    }),
+    [savedInputValues, setSavedInputValues] = useState<Record<string, string>>({
       laboratory: "",
       medication: "",
     }),
@@ -129,8 +134,29 @@ export default function Workspace() {
       setBusy(false);
     }
   }
+  function selectLastEncounter(summary: any, preferredId?: number) {
+    const resumable = summary.encounters.filter((item: any) => item.resumable);
+    const selected =
+      resumable.find((item: any) => item.id === preferredId) || resumable[0];
+    const value = selected
+      ? {
+          href: `/patients/${selected.patient_id}/encounters/${selected.id}/consultation`,
+          name: selected.patient_name,
+          date: selected.date,
+        }
+      : null;
+    setLastEncounter(value);
+    if (user?.id) {
+      if (value)
+        localStorage.setItem(`zeest-last-${user.id}`, JSON.stringify(value));
+      else localStorage.removeItem(`zeest-last-${user.id}`);
+    }
+  }
   async function reload() {
-    if (eid) {
+    if (user?.role === "admin") {
+      const value = await api("/admin/workspace");
+      if (currentRoute.current === route) setAdminData(value);
+    } else if (eid) {
       const [value, savedRecords, savedHistory, summary] = await Promise.all([
         api(`/encounters/${eid}`),
         api(`/encounters/${eid}/records`),
@@ -139,12 +165,26 @@ export default function Workspace() {
       ]);
       if (currentRoute.current !== route) return;
       if (value.patient.id !== pid)
-        throw new Error("Encounter does not belong to selected patient.");
+        throw new Error(
+          "Consultation does not belong to the selected patient.",
+        );
       setEnc(value);
       setOverview(summary);
       setPatients(summary.patients);
       setNoteVersion(value.encounter.version);
       const saved = value.inputs.filter((x: Row) => x.kind === "notes").at(-1);
+      const latestLaboratory = value.inputs
+        .filter((x: Row) => x.kind === "laboratory" && !x.file)
+        .at(-1);
+      const latestMedication = value.inputs
+        .filter((x: Row) => x.kind === "medication" && !x.file)
+        .at(-1);
+      const clinicalText = {
+        laboratory: latestLaboratory?.content || "",
+        medication: latestMedication?.content || "",
+      };
+      setInputValues(clinicalText);
+      setSavedInputValues(clinicalText);
       setNotes(
         saved ? { ...emptyNotes, ...JSON.parse(saved.content) } : emptyNotes,
       );
@@ -153,19 +193,7 @@ export default function Workspace() {
           saved ? { ...emptyNotes, ...JSON.parse(saved.content) } : emptyNotes,
         ),
       );
-      setLastEncounter({
-        href: `/patients/${pid}/encounters/${eid}/consultation`,
-        name: value.patient.name,
-        date: value.encounter.date,
-      });
-      localStorage.setItem(
-        `zeest-last-${user?.id}`,
-        JSON.stringify({
-          href: `/patients/${pid}/encounters/${eid}/consultation`,
-          name: value.patient.name,
-          date: value.encounter.date,
-        }),
-      );
+      selectLastEncounter(summary, value.encounter.resumable ? eid : undefined);
       setJobs(value.jobs);
       setFindings(
         value.findings.map((f: Row) => ({
@@ -187,6 +215,7 @@ export default function Workspace() {
       if (currentRoute.current === route) {
         setOverview(value);
         setPatients(value.patients);
+        selectLastEncounter(value);
       }
     }
   }
@@ -198,7 +227,10 @@ export default function Workspace() {
           const v = await r.json();
           setUser(v.physician);
           setCsrf(v.csrf);
-          if (route === "/" || isAuth) router.replace("/dashboard");
+          if (route === "/" || isAuth)
+            router.replace(
+              v.physician.role === "admin" ? "/admin" : "/dashboard",
+            );
         } else if (!isAuth) router.replace("/login");
       })
       .catch(() =>
@@ -220,17 +252,9 @@ export default function Workspace() {
     setQuery("");
     setMenuOpen(false);
     setInputValues({ laboratory: "", medication: "" });
+    setSavedInputValues({ laboratory: "", medication: "" });
     setNoteTab("transcript");
     focusPending.current = true;
-    if (user) {
-      try {
-        setLastEncounter(
-          JSON.parse(localStorage.getItem(`zeest-last-${user.id}`) || "null"),
-        );
-      } catch {
-        setLastEncounter(null);
-      }
-    }
     if (user && !isAuth) action(reload);
   }, [route, user?.id]);
   useEffect(() => {
@@ -296,7 +320,7 @@ export default function Workspace() {
         setLastEncounter(null);
         setUser(value.physician);
         setCsrf(value.csrf);
-        router.push("/dashboard");
+        router.push(value.physician.role === "admin" ? "/admin" : "/dashboard");
       }
     });
   }
@@ -340,8 +364,8 @@ export default function Workspace() {
     });
     setSpeechStatus(
       final
-        ? "Transcribing final audio locally..."
-        : `Transcribing chunk ${sequence + 1} locally...`,
+        ? "Transcribing final audio..."
+        : `Transcribing chunk ${sequence + 1}...`,
     );
     const j = await poll(result.id, epoch);
     if (epoch !== speechEpoch.current) return;
@@ -397,7 +421,7 @@ export default function Workspace() {
     await action(async () => {
       if (!navigator.mediaDevices?.getUserMedia)
         throw new Error(
-          "Microphone capture requires localhost and a supported browser. Use an audio file instead.",
+          "Microphone capture requires a secure browser context and a supported browser. Use an audio file instead.",
         );
       cancelSpeech.current = false;
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -433,7 +457,7 @@ export default function Workspace() {
         liveTexts.current.clear();
         setAudioUrl("");
         setSpeechStatus(
-          "Recording. Local transcript updates in approximately 8-second chunks.",
+          "Recording. Transcript updates in approximately 8-second chunks.",
         );
         setRecording(true);
         node.onaudioprocess = (event: AudioProcessingEvent) => {
@@ -459,7 +483,7 @@ export default function Workspace() {
             node.onaudioprocess = null;
             void stop();
             setMessage(
-              "Recording reached the local size limit and was stopped.",
+              "Recording reached the size limit and was stopped.",
             );
           }
         };
@@ -484,7 +508,7 @@ export default function Workspace() {
     const blob = wav(join(c.all), c.rate);
     setAudioUrl(URL.createObjectURL(blob));
     setSpeechStatus(
-      "Recording stopped. Waiting for local transcript reconciliation...",
+      "Recording stopped. Waiting for transcript reconciliation...",
     );
     enqueue(blob, c.id + "-final", 0, true);
   }
@@ -535,7 +559,7 @@ export default function Workspace() {
     (JSON.stringify(notes) !== savedNotes ||
       (editing &&
         (diagnosis !== draft?.diagnosis || treatment !== draft?.treatment)) ||
-      Object.values(inputValues).some(Boolean));
+      JSON.stringify(inputValues) !== JSON.stringify(savedInputValues));
   useEffect(() => {
     const warn = (e: BeforeUnloadEvent) => {
       if (dirty || recording) {
@@ -586,6 +610,7 @@ export default function Workspace() {
         return;
       await api("/auth/logout", { method: "POST" });
       setOverview(null);
+      setAdminData(null);
       setPatients([]);
       setPatientData(null);
       setEnc(null);
@@ -608,14 +633,6 @@ export default function Workspace() {
       setInputValues((v) => ({ ...v, [kind]: "" }));
       await reload();
       setMessage("Input saved with its source revision.");
-    });
-  const uploadFile = (file: File) =>
-    action(async () => {
-      const f = new FormData();
-      f.set("file", file);
-      await api(`/encounters/${eid}/uploads`, { method: "POST", body: f });
-      await reload();
-      setMessage("Upload saved. No simulated analysis mapped to this input.");
     });
   const loadFindings = () =>
     action(async () => {
@@ -662,6 +679,7 @@ export default function Workspace() {
     records,
     history,
     overview,
+    adminData,
     query,
     setQuery,
     menuOpen,
@@ -720,13 +738,13 @@ export default function Workspace() {
     reload,
     logout,
     saveInput,
-    uploadFile,
     loadFindings,
     generateDraft,
     saveDraft,
     onNavigateCapture,
     draft,
     router,
+    api,
   };
   return <WorkspaceView m={m} />;
 }

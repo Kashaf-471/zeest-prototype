@@ -13,9 +13,9 @@ async function login(page: any) {
   await expect(
     page.getByRole("heading", { name: "My Patients", exact: true }),
   ).toBeVisible();
-  await page.getByRole("link").filter({ hasText: "Amina Demo 2" }).click();
+  await page.getByRole("link").filter({ hasText: "Amina Khan" }).click();
   await page
-    .getByRole("link", { name: "Open Encounter", exact: true })
+    .getByRole("link", { name: "Open Consultation", exact: true })
     .first()
     .click();
   await expect(

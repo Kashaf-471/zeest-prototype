@@ -6,7 +6,7 @@ The request owns the transaction. No clinical service calls a hosted model.
 import json
 from sqlalchemy import select, update
 from fastapi import HTTPException
-from db import Patient, Encounter, Input, Draft, Decision, Audit
+from db import Patient, Encounter, Input, Draft, Decision, Audit, Finding, Job
 from fixtures import SCENARIOS, findings, evidence
 
 
@@ -24,9 +24,15 @@ def own_patient(s, pid, u):
 def own_encounter(s, eid, u):
     e = s.get(Encounter, eid)
     if not e:
-        fail(404, "Encounter not found.")
+        fail(404, "Consultation not found.")
     own_patient(s, e.patient_id, u)
     return e
+
+
+def require_role(user, role):
+    if user.role != role:
+        fail(403, f"{role.title()} access is required.")
+    return user
 
 
 def audit(s, u, e, action, revision=None, detail=""):
@@ -63,25 +69,64 @@ def latest(s, eid):
 
 
 def snapshot(s, e):
+    def consultation_history(consultation):
+        source_rows = inputs(s, consultation.id)
+        draft_rows = list(
+            s.scalars(
+                select(Draft)
+                .where(Draft.encounter_id == consultation.id)
+                .order_by(Draft.id)
+            )
+        )
+        decision_rows = list(
+            s.scalars(select(Decision).where(Decision.encounter_id == consultation.id))
+        )
+        finding_rows = list(
+            s.scalars(select(Finding).where(Finding.encounter_id == consultation.id))
+        )
+        audit_rows = list(
+            s.scalars(
+                select(Audit)
+                .where(Audit.encounter_id == consultation.id)
+                .order_by(Audit.id.desc())
+            )
+        )
+        job_rows = list(
+            s.scalars(select(Job).where(Job.encounter_id == consultation.id))
+        )
+        return {
+            "encounter_id": consultation.id,
+            "date": consultation.date,
+            "title": consultation.title,
+            "version": consultation.version,
+            "sources": [data(row) for row in source_rows],
+            "recordings": [data(row) for row in job_rows],
+            "findings": [data(row) for row in finding_rows],
+            "drafts": [data(row) for row in draft_rows],
+            "approved_decisions": [data(row) for row in decision_rows],
+            "audit": [data(row) for row in audit_rows],
+            "progress": {
+                "notes": any(row.kind == "notes" for row in source_rows),
+                "clinical_inputs": any(
+                    row.kind in ("imaging", "clinical_report", "laboratory", "medication")
+                    for row in source_rows
+                ),
+                "review": bool(draft_rows),
+                "decision": bool(decision_rows),
+            },
+        }
+
     return {
         "patient_id": e.patient_id,
         "encounter_id": e.id,
         "source_version": e.version,
         "input_revisions": [data(x) for x in inputs(s, e.id)],
         "history": [
-            {
-                "encounter_id": x.id,
-                "date": x.date,
-                "sources": [data(i) for i in inputs(s, x.id)],
-                "approved_decisions": [
-                    data(d)
-                    for d in s.scalars(
-                        select(Decision).where(Decision.encounter_id == x.id)
-                    )
-                ],
-            }
-            for x in s.scalars(
-                select(Encounter).where(Encounter.patient_id == e.patient_id)
+            consultation_history(consultation)
+            for consultation in s.scalars(
+                select(Encounter)
+                .where(Encounter.patient_id == e.patient_id)
+                .order_by(Encounter.date.desc(), Encounter.id.desc())
             )
         ],
     }
@@ -114,14 +159,31 @@ def generate_draft(s, eid, u, b):
         fail(422, "Save case inputs first.")
     fixture = SCENARIOS[b.scenario]
     case["findings"] = findings(inputs(s, eid), b.scenario)
+    patient = own_patient(s, e.patient_id, u)
+    note_rows = [row for row in inputs(s, eid) if row.kind == "notes"]
+    saved_notes = {}
+    if note_rows:
+        try:
+            saved_notes = json.loads(note_rows[-1].content)
+        except (TypeError, json.JSONDecodeError):
+            saved_notes = {}
+    assessment = saved_notes.get("assessment", "").strip()
+    plan = saved_notes.get("plan", "").strip()
+    diagnosis = (
+        f"Simulated draft for {patient.name}: {fixture['diagnosis']}"
+        + (f" Physician-entered assessment context: {assessment}" if assessment else "")
+    )
+    treatment = fixture["treatment"] + (
+        f" Physician-entered plan context: {plan}" if plan else ""
+    )
     d = Draft(
         encounter_id=eid,
         scenario=b.scenario,
-        diagnosis=fixture["diagnosis"],
-        treatment=fixture["treatment"],
+        diagnosis=diagnosis,
+        treatment=treatment,
         snapshot=json.dumps(case),
         evidence=json.dumps(evidence(b.scenario)),
-        critic="Simulated critic: this is a fixed scenario, not an assessment of the supplied audio or arbitrary uploads. Verify every statement. Clinical safety is not validated.",
+        critic="Simulated critic: the draft identifies the selected patient and carries forward physician-entered assessment and plan context, but it does not infer a diagnosis from audio or uploads. Verify every statement. Clinical safety is not validated.",
     )
     s.add(d)
     s.flush()

@@ -1,7 +1,7 @@
 import "./globals.css";
 export const metadata = {
   title: "Zeest | Physician workspace",
-  description: "Local synthetic clinical prototype",
+  description: "Physician-controlled clinical workspace",
 };
 export default function Layout({ children }: { children: React.ReactNode }) {
   return (

@@ -5,21 +5,47 @@ from security import hash_password
 
 def seed():
     with SessionLocal.begin() as s:
+        admin_email = "admin@example.com"
+        if not s.scalar(select(Physician).where(Physician.email == admin_email)):
+            s.add(
+                Physician(
+                    name="Zeest Administrator",
+                    email=admin_email,
+                    password=hash_password("ZeestAdmin!2026"),
+                    role="admin",
+                )
+            )
+        physician_names = {1: "Dr. Sana Malik", 2: "Dr. Hamza Ali"}
+        patient_surnames = {1: "Noor", 2: "Khan"}
         for n in (1, 2):
             email = f"doctor{n}@example.com"
-            if s.scalar(select(Physician).where(Physician.email == email)):
+            doctor = s.scalar(select(Physician).where(Physician.email == email))
+            if doctor:
+                if doctor.name == f"Dr. Demo {n}":
+                    doctor.name = physician_names[n]
+                for patient in s.scalars(
+                    select(Patient).where(Patient.physician_id == doctor.id)
+                ):
+                    old_suffix = f" Demo {n}"
+                    if patient.name.endswith(old_suffix):
+                        patient.name = (
+                            patient.name[: -len(old_suffix)]
+                            + " "
+                            + patient_surnames[n]
+                        )
                 continue
             doctor = Physician(
-                name=f"Dr. Demo {n}",
+                name=physician_names[n],
                 email=email,
                 password=hash_password("ZeestDemo!2026"),
+                role="physician",
             )
             s.add(doctor)
             s.flush()
             for k, name in enumerate(["Amina", "Bilal", "Sara"]):
                 p = Patient(
                     physician_id=doctor.id,
-                    name=f"{name} Demo {n}",
+                    name=f"{name} {patient_surnames[n]}",
                     info=f"Synthetic record only. Age {35 + k * 9}. Allergy: none documented. History: routine outpatient follow-up.",
                 )
                 s.add(p)
@@ -53,4 +79,4 @@ def seed():
 
 if __name__ == "__main__":
     seed()
-    print("Demo seed complete (idempotent).")
+    print("Synthetic seed complete (idempotent).")

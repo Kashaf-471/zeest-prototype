@@ -47,6 +47,7 @@ class Physician(Base):
     name: Mapped[str] = mapped_column(String(100))
     email: Mapped[str] = mapped_column(String(254), unique=True)
     password: Mapped[str] = mapped_column(Text)
+    role: Mapped[str] = mapped_column(String(20), default="physician")
 
 
 class LoginSession(Base):

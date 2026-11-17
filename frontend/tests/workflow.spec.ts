@@ -1,5 +1,4 @@
 import { test, expect } from "@playwright/test";
-import path from "node:path";
 test("physician workflow and laptop/narrow screen review", async ({ page }) => {
   const errors: string[] = [];
   const externalRequests: string[] = [];
@@ -53,9 +52,9 @@ test("physician workflow and laptop/narrow screen review", async ({ page }) => {
     fullPage: true,
   });
   await page.setViewportSize({ width: 1366, height: 900 });
-  await page.getByRole("link").filter({ hasText: "Amina Demo 1" }).click();
+  await page.getByRole("link").filter({ hasText: "Amina Noor" }).click();
   await expect(
-    page.getByRole("heading", { name: "Encounter history" }),
+    page.getByRole("heading", { name: "Consultation history" }),
   ).toBeVisible();
   await expect(
     page.locator('[aria-label="Loading workspace data"]'),
@@ -76,7 +75,7 @@ test("physician workflow and laptop/narrow screen review", async ({ page }) => {
   });
   await page.setViewportSize({ width: 1366, height: 900 });
   await page
-    .getByRole("link", { name: "Open Encounter", exact: true })
+    .getByRole("link", { name: /^(Open|View) Consultation/ })
     .first()
     .click();
   await expect(
@@ -104,34 +103,31 @@ test("physician workflow and laptop/narrow screen review", async ({ page }) => {
   await page
     .getByRole("link", { name: "Clinical Inputs", exact: true })
     .click();
-  await page.getByLabel("PNG, JPEG, PDF or TXT").setInputFiles({
-    name: "arbitrary.txt",
-    mimeType: "text/plain",
-    buffer: Buffer.from("Unknown browser upload"),
-  });
-  await expect(page.getByText("Upload saved.", { exact: false })).toBeVisible();
-  await page.getByRole("tab", { name: "Laboratory", exact: true }).click();
-  await page
-    .getByLabel("Values, units and supplied source")
-    .fill("Synthetic Hb 12.8 g/dL, browser test source");
-  await page.getByRole("button", { name: "Save Input", exact: true }).click();
   await expect(
-    page.getByText("Input saved with its source revision."),
+    page.getByText("Chest X-ray specialist input"),
   ).toBeVisible();
-  await page.getByRole("tab", { name: "Medication", exact: true }).click();
-  await page
-    .getByLabel("Medication, dose, frequency and supplied source")
-    .fill("Synthetic: no current medication, test source");
-  await page.getByRole("button", { name: "Save Input", exact: true }).click();
+  await expect(page.locator('input[type="file"]')).toHaveCount(0);
+  await page.getByRole("tab", { name: "Laboratory", exact: true }).click();
   await expect(
-    page.getByText("Input saved with its source revision."),
+    page.getByRole("heading", { name: "Laboratory information" }),
+  ).toBeVisible();
+  await page
+    .getByLabel("Values, units and source")
+    .fill("HbA1c, 5.8%, physician review");
+  await page.getByRole("button", { name: "Save Input" }).click();
+  await expect(
+    page.getByRole("status").filter({ hasText: "Input saved" }),
+  ).toBeVisible();
+  await expect(page.getByLabel("Values, units and source")).toHaveValue(
+    "HbA1c, 5.8%, physician review",
+  );
+  await page.getByRole("tab", { name: "Medication", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Medication context" }),
   ).toBeVisible();
   await page.getByRole("tab", { name: "Findings", exact: true }).click();
   await page.getByRole("button", { name: "Load Simulated Findings" }).click();
   await expect(page.getByText("Fixed scenario findings loaded.")).toBeVisible();
-  await expect(
-    page.getByText("No simulated analysis mapped to this input").first(),
-  ).toBeVisible();
   await expect(
     page.locator('[aria-label="Loading workspace data"]'),
   ).toHaveCount(0);
@@ -198,7 +194,7 @@ test("physician workflow and laptop/narrow screen review", async ({ page }) => {
     fullPage: true,
   });
   await page
-    .getByRole("navigation", { name: "Encounter workflow" })
+    .getByRole("navigation", { name: "Consultation workflow" })
     .getByRole("link", { name: "Patient Records", exact: true })
     .click();
   await expect(

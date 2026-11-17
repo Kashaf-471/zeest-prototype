@@ -1,8 +1,28 @@
-"""Physician-owned overview for dashboard and cross-encounter navigation."""
+"""Physician-owned overview for dashboard and cross-consultation navigation."""
 
+from datetime import datetime, timezone
 from sqlalchemy import select
 from db import Patient, Encounter, Draft, Decision, Audit, Input
 from services import data
+
+
+def consultation_status(encounter, source_count=0, draft=None, decision_count=0):
+    if decision_count or (draft and draft.status == "APPROVED"):
+        return "COMPLETED"
+    if draft and draft.status == "REJECTED":
+        return "REJECTED"
+    today = datetime.now(timezone.utc).date().isoformat()
+    if encounter.date < today:
+        return "INCOMPLETE" if source_count or draft else "NOT_ATTENDED"
+    if draft or source_count:
+        return "IN_PROGRESS"
+    if encounter.date > today:
+        return "SCHEDULED"
+    return "READY"
+
+
+def is_resumable(status):
+    return status in {"READY", "IN_PROGRESS", "INCOMPLETE"}
 
 
 def overview(session, physician):
@@ -49,13 +69,20 @@ def overview(session, physician):
     rows = []
     for encounter in encounters:
         draft = latest.get(encounter.id)
+        source_count = sum(i.encounter_id == encounter.id for i in sources)
+        decision_count = sum(d.encounter_id == encounter.id for d in decisions)
+        lifecycle = consultation_status(
+            encounter, source_count, draft, decision_count
+        )
         rows.append(
             dict(
                 data(encounter),
                 patient_name=patient_map[encounter.patient_id].name,
                 draft_status=draft.status if draft else None,
                 draft_id=draft.id if draft else None,
-                source_count=sum(i.encounter_id == encounter.id for i in sources),
+                source_count=source_count,
+                lifecycle=lifecycle,
+                resumable=is_resumable(lifecycle),
             )
         )
 

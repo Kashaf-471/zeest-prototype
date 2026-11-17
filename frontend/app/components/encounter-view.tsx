@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import { useEffect } from "react";
 import {
   Icon,
   Avatar,
@@ -22,25 +23,43 @@ export function EncounterView({ m }: { m: any }) {
     consultation:
       "Capture the conversation, review the transcript and save your notes.",
     inputs:
-      "Add the clinical information you want to keep with this encounter.",
+      "Review clinical documents supplied when this consultation was created.",
     review: "Inspect a saved draft and make an explicit review decision.",
     records: "Review accepted decisions and the history of saved actions.",
   };
-  if (!m.enc || m.enc.encounter.id !== m.eid)
+  if (!m.enc || m.enc.encounter.id !== m.eid) {
+    const backendOffline = /backend unavailable|cannot reach backend/i.test(
+      m.error || "",
+    );
     return m.error ? (
       <Empty
         icon="records"
-        title="Encounter unavailable"
-        description="This encounter could not be opened. Select a visit from your assigned patient records."
+        title={
+          backendOffline
+            ? "Backend connection unavailable"
+            : "Consultation unavailable"
+        }
+        description={
+          backendOffline
+            ? "Your saved consultation remains stored. Start or restart the backend, then reconnect."
+            : "This consultation could not be opened. It may have been reassigned or may not belong to this physician."
+        }
         action={
-          <Link className="btn" href="/patients">
-            Open My Patients
-          </Link>
+          backendOffline ? (
+            <button className="btn primary" onClick={() => m.action(m.reload)}>
+              Retry connection
+            </button>
+          ) : (
+            <Link className="btn" href="/patients">
+              Open My Patients
+            </Link>
+          )
         }
       />
     ) : (
       <div className="skeleton-panel" />
     );
+  }
   const step = ["consultation", "inputs", "review", "records"].indexOf(
     m.screen,
   );
@@ -48,16 +67,16 @@ export function EncounterView({ m }: { m: any }) {
     <>
       <Link className="back-link" href={`/patients/${m.pid}`}>
         <Icon name="back" size={16} />
-        Patient details and encounter history
+        Patient details and consultation history
       </Link>
       <PageHeading
-        eyebrow={`Encounter workspace · Step ${step + 1} of 4`}
-        title={titles[m.screen] || "Encounter"}
+        eyebrow={`Consultation workspace · Step ${step + 1} of 4`}
+        title={titles[m.screen] || "Consultation"}
         description={descriptions[m.screen]}
       />
       <section
         className="patient-context"
-        aria-label="Selected patient and encounter"
+        aria-label="Selected patient and consultation"
       >
         <div className="identity">
           <Avatar name={m.enc.patient.name} />
@@ -73,13 +92,13 @@ export function EncounterView({ m }: { m: any }) {
           <div>
             <strong>{formatDate(m.enc.encounter.date)}</strong>
             <small>
-              {m.enc.encounter.title} · Encounter {m.eid}
+              {m.enc.encounter.title} · Consultation {m.eid}
             </small>
           </div>
         </div>
-        <Status value={m.draft?.status} />
+        <Status value={m.enc.encounter.lifecycle || m.draft?.status} />
       </section>
-      <nav className="encounter-steps" aria-label="Encounter workflow">
+      <nav className="encounter-steps" aria-label="Consultation workflow">
         {[
           ["consultation", "Consultation", "Notes and recording"],
           ["inputs", "Clinical Inputs", "Documents and observations"],
@@ -113,7 +132,7 @@ export function EncounterView({ m }: { m: any }) {
       ) : (
         <Empty
           title="Page not found"
-          description="Choose a step above to continue this encounter."
+          description="Choose a step above to continue this consultation."
         />
       )}
     </>
@@ -155,7 +174,7 @@ function Consultation({ m }: { m: any }) {
               <h3>{m.recording ? "Recording" : "Ready when you are"}</h3>
               <p>
                 {m.recording
-                  ? "Speak naturally. Your transcript updates locally."
+                  ? "Speak naturally. Your transcript updates while recording."
                   : "Record a consultation or upload an audio file."}
               </p>
               <meter
@@ -386,17 +405,51 @@ function Consultation({ m }: { m: any }) {
         </Link>
       </div>
       <details className="panel section">
-        <summary>Patient history from earlier encounters</summary>
+        <summary>Complete history from earlier consultations</summary>
         {m.history?.history
           .filter((h: any) => h.encounter_id !== m.eid)
           .map((h: any) => (
-            <section className="section" key={h.encounter_id}>
-              <h3>{formatDate(h.date)}</h3>
+            <section
+              className="section consultation-history-card"
+              key={h.encounter_id}
+            >
+              <div className="panel-heading">
+                <div>
+                  <h3>{h.title}</h3>
+                  <p>
+                    {formatDate(h.date)} · Consultation {h.encounter_id}
+                  </p>
+                </div>
+                <span
+                  className={h.progress.decision ? "soft-label" : "count-tag"}
+                >
+                  {h.progress.decision
+                    ? "Approved"
+                    : h.drafts.length
+                      ? "Reviewed"
+                      : "In progress"}
+                </span>
+              </div>
+              <div className="history-progress">
+                {[
+                  ["Notes", h.progress.notes],
+                  ["Clinical inputs", h.progress.clinical_inputs],
+                  ["Review", h.progress.review],
+                  ["Decision", h.progress.decision],
+                ].map(([label, done]: any) => (
+                  <span className={done ? "complete" : ""} key={label}>
+                    <Icon name={done ? "check" : "clock"} size={14} />
+                    {label}
+                  </span>
+                ))}
+              </div>
               <Sources
                 items={h.sources.filter((i: any) => i.kind !== "audio")}
               />
               <p className="muted">
-                {h.approved_decisions.length} approved decisions
+                {h.recordings.length} recordings · {h.findings.length} findings
+                · {h.drafts.length} draft revisions · {h.audit.length} saved
+                actions
               </p>
             </section>
           ))}
@@ -407,7 +460,7 @@ function Consultation({ m }: { m: any }) {
 export function ScenarioSelect({ m }: { m: any }) {
   return (
     <div className="field scenario-field">
-      <label htmlFor="scenario">Demo scenario</label>
+      <label htmlFor="scenario">Clinical scenario</label>
       <select
         id="scenario"
         value={m.scenario}
@@ -431,9 +484,11 @@ function Inputs({ m }: { m: any }) {
             aria-label="Clinical input types"
           >
             {[
-              ["imaging", "Imaging", "upload"],
+              ["imaging", "Chest X-ray", "upload"],
+              ["clinical_report", "Clinical Reports", "file"],
               ["laboratory", "Laboratory", "file"],
               ["medication", "Medication", "shield"],
+              ["document", "Documents", "records"],
               ["findings", "Findings", "review"],
             ].map(([key, label, icon]) => (
               <button
@@ -458,32 +513,13 @@ function Inputs({ m }: { m: any }) {
           >
             {m.tab === "imaging" ? (
               <>
-                <h2>Imaging and documents</h2>
+                <h2>Chest X-ray</h2>
                 <p className="sub">
-                  Attach source material to this encounter for later review.
+                  Chest X-rays are a separate Imaging Agent input. Report NLP does not interpret images.
                 </p>
-                <label htmlFor="clinical-file" className="document-drop">
-                  <span className="upload-symbol">
-                    <Icon name="upload" size={26} />
-                  </span>
-                  <strong>Choose a document to upload</strong>
-                  <span>PNG, JPEG, PDF or TXT · up to 20 MB</span>
-                  <input
-                    id="clinical-file"
-                    aria-label="PNG, JPEG, PDF or TXT document upload"
-                    type="file"
-                    accept=".png,.jpg,.jpeg,.pdf,.txt"
-                    disabled={m.busy}
-                    onChange={(e) => {
-                      if (e.target.files?.[0]) m.uploadFile(e.target.files[0]);
-                      e.target.value = "";
-                    }}
-                  />
-                </label>
-                <p className="hint">
-                  Files are stored securely in the local application. Arbitrary
-                  uploads are not clinically analysed.
-                </p>
+                <Tip title="Chest X-ray specialist input">
+                  The upload is stored under Chest X-ray for the separate Imaging Agent. Image findings are not generated in this interface yet.
+                </Tip>
               </>
             ) : m.tab === "findings" ? (
               <>
@@ -491,7 +527,7 @@ function Inputs({ m }: { m: any }) {
                   <div>
                     <h2>Simulated findings</h2>
                     <p>
-                      Fixed outputs for an explicitly selected demo scenario.
+                      Fixed outputs for an explicitly selected clinical scenario.
                     </p>
                   </div>
                   <span className="soft-label">Simulation</span>
@@ -523,10 +559,24 @@ function Inputs({ m }: { m: any }) {
                   <Empty
                     icon="review"
                     title="No findings loaded"
-                    description="Choose a demo scenario above to inspect its fixed findings. New uploads remain unmapped."
+                    description="Choose a clinical scenario above to inspect its fixed findings. New uploads remain unmapped."
                   />
                 )}
               </>
+            ) : m.tab === "document" || m.tab === "clinical_report" ? (
+              <div>
+                <h2>{m.tab === "clinical_report" ? "Clinical reports" : "Other documents"}</h2>
+                <p className="sub">
+                  {m.tab === "clinical_report"
+                    ? "Report NLP extraction is saved under Patient Records > Report NLP."
+                    : "Review supporting documents supplied by the administrator."}
+                </p>
+                <Tip title={m.tab === "clinical_report" ? "Report NLP extraction" : "Administrator-provided documents"}>
+                  {m.tab === "clinical_report"
+                    ? "Open the saved report or review its extracted mentions under Patient Records."
+                    : "Open the saved files below to view them. File attachments are managed by the administrator."}
+                </Tip>
+              </div>
             ) : (
               <form
                 onSubmit={(e) => {
@@ -541,26 +591,25 @@ function Inputs({ m }: { m: any }) {
                 </h2>
                 <p className="sub">
                   {m.tab === "laboratory"
-                    ? "Include the test, value, unit and supplied source."
-                    : "Include the medication, dose, frequency and source."}
+                    ? "Administrator information is prefilled below. Review and edit it when required."
+                    : "Administrator information is prefilled below. Review and edit it when required."}
                 </p>
                 <div className="field">
-                  <label htmlFor="content">
+                  <label htmlFor="clinical-content">
                     {m.tab === "laboratory"
-                      ? "Values, units and supplied source"
-                      : "Medication, dose, frequency and supplied source"}
+                      ? "Values, units and source"
+                      : "Medication, dose, frequency and source"}
                   </label>
                   <textarea
-                    id="content"
-                    name="content"
+                    id="clinical-content"
                     rows={7}
                     minLength={3}
                     maxLength={20000}
                     required
                     placeholder={
                       m.tab === "laboratory"
-                        ? "Example format: Test name, value, unit, date and source."
-                        : "Medication name, dose, frequency and source. Note allergies separately."
+                        ? "Test name, value, unit, date and source."
+                        : "Medication name, dose, frequency and source."
                     }
                     value={m.inputValues[m.tab] || ""}
                     onChange={(e) =>
@@ -573,7 +622,7 @@ function Inputs({ m }: { m: any }) {
                 </div>
                 <div className="editor-footer">
                   <span className="muted">
-                    Each save retains a separate source revision.
+                    Saving creates a new revision and keeps earlier information.
                   </span>
                   <button className="primary" disabled={m.busy}>
                     <Icon name="save" size={16} />
@@ -587,7 +636,7 @@ function Inputs({ m }: { m: any }) {
         <aside className="stack">
           <section className="panel">
             <div className="panel-heading">
-              <h2>Encounter sources</h2>
+              <h2>Consultation sources</h2>
               <span className="count-tag">
                 {m.enc.inputs.filter((i: any) => i.kind !== "audio").length}
               </span>
@@ -595,9 +644,11 @@ function Inputs({ m }: { m: any }) {
             <div className="input-checklist">
               {[
                 ["notes", "Consultation notes"],
-                ["imaging", "Imaging / documents"],
+                ["imaging", "Chest X-ray image"],
+                ["clinical_report", "Clinical reports"],
                 ["laboratory", "Laboratory"],
                 ["medication", "Medication"],
+                ["document", "Other documents"],
               ].map(([key, label]) => {
                 const count = m.enc.inputs.filter(
                   (i: any) => i.kind === key,
@@ -618,7 +669,7 @@ function Inputs({ m }: { m: any }) {
           </section>
           <Tip title="What happens next?">
             Save the information you have, then continue to Review. The draft
-            uses a saved source snapshot. Clinical outputs are selected demo
+            uses a saved source snapshot. Clinical outputs are simulated
             fixtures, not an interpretation of new files.
           </Tip>
         </aside>
@@ -629,10 +680,12 @@ function Inputs({ m }: { m: any }) {
             <h2>
               Saved{" "}
               {m.tab === "imaging"
-                ? "documents"
+                ? "imaging"
                 : m.tab === "laboratory"
                   ? "laboratory sources"
-                  : "medication sources"}
+                  : m.tab === "medication"
+                    ? "medication sources"
+                    : "documents"}
             </h2>
             <span className="count-tag">{sources.length}</span>
           </div>
@@ -642,7 +695,7 @@ function Inputs({ m }: { m: any }) {
             <Empty
               icon="file"
               title="Nothing saved in this category"
-              description="Add information above to keep it with this encounter."
+              description="No source was supplied in this category when the consultation was created."
             />
           )}
         </section>
@@ -675,7 +728,8 @@ function Review({ m }: { m: any }) {
             {d ? "Prepare another revision" : "Create a draft for your review"}
           </h2>
           <p className="sub">
-            Selects fixed clinical content for the chosen scenario.
+            Uses the selected simulation plus this patient&apos;s saved
+            physician assessment and plan.
           </p>
         </div>
         <ScenarioSelect m={m} />
@@ -1015,13 +1069,83 @@ function Review({ m }: { m: any }) {
     </>
   );
 }
+function ReportNLPRecords({ m }: { m: any }) {
+  const reports = m.enc.inputs
+    .filter((input: any) => input.kind === "clinical_report")
+    .slice()
+    .reverse();
+  return (
+    <>
+      <div className="panel-heading">
+        <div>
+          <h2>Structured report extraction</h2>
+          <p>Local source-linked mention extraction saved when the administrator uploaded each report.</p>
+        </div>
+        <span className="soft-label">Research only</span>
+      </div>
+      <p className="research-notice">
+        This output extracts terms mentioned in report text. It is not a diagnosis or a clinical prediction. Use synthetic reports only.
+      </p>
+      {!reports.length ? (
+        <Empty icon="file" title="No clinical reports uploaded" description="An administrator can add a text report or selectable-text PDF during consultation setup. Its structured extraction will appear here." />
+      ) : (
+        <div className="findings-list">
+          {reports.map((input: any) => {
+            let saved: any = null;
+            try { saved = JSON.parse(input.content); } catch { saved = null; }
+            const result = saved?.result;
+            const findings = result?.findings || [];
+            return (
+              <article key={input.id}>
+                <div className="source-heading">
+                  <Icon name="file" size={18} />
+                  <strong>{input.filename || "Clinical report"}</strong>
+                  <small>Source {input.id} | {formatDate(input.created, true)}</small>
+                </div>
+                {input.filename && <p><a className="text-link" href={`/api/inputs/${input.id}/file`}>Open uploaded report</a></p>}
+                {saved?.source_text && <details className="research-limits"><summary>Extracted report text</summary><p className="preserve">{saved.source_text}</p></details>}
+                {saved?.status === "needs_ocr" ? (
+                  <p>{saved.message}</p>
+                ) : result ? (
+                  <>
+                    <p><strong>Method:</strong> {result.method}</p>
+                    <p><strong>Result:</strong> {result.status} | {result.support_status}</p>
+                    {findings.length ? findings.map((finding: any) => (
+                      <section className="report-finding" key={finding.code}>
+                        <div className="source-heading"><strong>{finding.label}</strong><small>{finding.assertion} | {finding.value?.concept_type}</small></div>
+                        {finding.value?.mentions?.length ? finding.value.mentions.map((mention: any, index: number) => (
+                          <p className="preserve research-evidence" key={`${finding.code}-${index}`}>
+                            <strong>Source text:</strong> "{mention.text}"{mention.page ? ` | Page ${mention.page}` : ""}<br />
+                            <strong>Context:</strong> {mention.assertion}, {mention.temporality}, {String(mention.experiencer).replaceAll("_", " ")} | {mention.method}{mention.extractor_score != null ? ` | model score ${Number(mention.extractor_score).toFixed(3)}` : ""}
+                          </p>
+                        )) : <p>{finding.explanation}</p>}
+                      </section>
+                    )) : <p>No supported mentions were extracted. This does not establish that a condition is absent.</p>}
+                    {result.limitations?.length > 0 && <details className="research-limits"><summary>Model limitations</summary><ul>{result.limitations.map((item: string) => <li key={item}>{item}</li>)}</ul></details>}
+                  </>
+                ) : <p>Structured Report NLP output is unavailable for this file.</p>}
+              </article>
+            );
+          })}
+        </div>
+      )}
+    </>
+  );
+}
+
 function Records({ m }: { m: any }) {
+  const hasReports = m.enc.inputs.some((input: any) => input.kind === "clinical_report");
+  useEffect(() => {
+    if (hasReports && m.recordTab === "decisions") m.setRecordTab("reports");
+    if (!hasReports && m.recordTab === "reports") m.setRecordTab("decisions");
+  }, [m.eid, hasReports]);
   return (
     <>
       <section className="panel">
-        <div className="tabs" role="tablist" aria-label="Encounter records">
+        <div className="tabs" role="tablist" aria-label="Consultation records">
           {[
             ["decisions", "Approved Decisions", "shield"],
+            ["reports", "Report NLP", "file"],
             ["audit", "Audit History", "clock"],
           ].map(([key, label, icon]) => (
             <button
@@ -1039,7 +1163,9 @@ function Records({ m }: { m: any }) {
               <span className="count-tag">
                 {key === "decisions"
                   ? m.records?.decisions.length
-                  : m.records?.audit.length}
+                  : key === "reports"
+                    ? m.enc.inputs.filter((input: any) => input.kind === "clinical_report").length
+                    : m.records?.audit.length}
               </span>
             </button>
           ))}
@@ -1089,6 +1215,8 @@ function Records({ m }: { m: any }) {
                 ))
               )}
             </>
+          ) : m.recordTab === "reports" ? (
+            <ReportNLPRecords m={m} />
           ) : (
             <>
               <div className="panel-heading">

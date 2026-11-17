@@ -1,5 +1,31 @@
 ﻿import Link from "next/link";
 import type { ReactNode } from "react";
+
+export function ZeestLogo({ size = 40 }: { size?: number }) {
+  return (
+    <svg
+      className="zeest-logo"
+      width={size}
+      height={size}
+      viewBox="0 0 48 48"
+      fill="none"
+      aria-hidden="true"
+    >
+      <rect width="48" height="48" rx="14" fill="currentColor" />
+      <path
+        d="M14 15.5h20L17 32.5h17"
+        stroke="white"
+        strokeWidth="4.2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M31.5 11.5c4.2.1 7 2.3 7.8 6.5-4.3.1-7.1-2.1-7.8-6.5Z"
+        fill="#A8E4C7"
+      />
+    </svg>
+  );
+}
 export function Icon({ name, size = 20 }: { name: string; size?: number }) {
   const shapes: Record<string, ReactNode> = {
     dashboard: (
@@ -50,6 +76,12 @@ export function Icon({ name, size = 20 }: { name: string; size?: number }) {
     upload: (
       <>
         <path d="M12 16V3m-5 5 5-5 5 5M4 15v5a1 1 0 001 1h14a1 1 0 001-1v-5" />
+      </>
+    ),
+    camera: (
+      <>
+        <path d="M4 7h4l2-3h4l2 3h4a2 2 0 012 2v10a2 2 0 01-2 2H4a2 2 0 01-2-2V9a2 2 0 012-2Z" />
+        <circle cx="12" cy="14" r="4" />
       </>
     ),
     clock: (
@@ -138,6 +170,11 @@ export function Status({ value }: { value?: string }) {
     SILENCE: "No speech detected",
     PROCESSING: "Processing",
     FAILED: "Failed",
+    SCHEDULED: "Scheduled",
+    READY: "Ready today",
+    IN_PROGRESS: "In progress",
+    INCOMPLETE: "Incomplete",
+    NOT_ATTENDED: "Not attended",
   };
   return (
     <span className={"status-pill " + (value || "NOT_STARTED").toLowerCase()}>
@@ -232,6 +269,7 @@ export function Sources({ items }: { items: any[] }) {
                     {
                       notes: "Consultation notes",
                       laboratory: "Laboratory information",
+                      clinical_report: "Clinical report",
                       medication: "Medication context",
                     } as any
                   )[i.kind] ||
@@ -288,9 +326,13 @@ export function EncounterRows({
               {e.title} · {formatDate(e.date)}
             </span>
           </div>
-          <Status value={e.draft_status} />
+          <Status value={e.lifecycle || e.draft_status} />
           <span className="row-open">
-            {review ? "Review draft" : "Open encounter"}
+            {review
+              ? "Review draft"
+              : e.resumable
+                ? "Open consultation"
+                : "View consultation"}
             <Icon name="arrow" size={16} />
           </span>
         </Link>
@@ -307,5 +349,6 @@ export const actionLabels: Record<string, string> = {
   MODIFY: "Draft revised",
   APPROVE: "Decision approved",
   REJECT: "Draft rejected",
-  SIMULATED_FINDINGS: "Demo findings loaded",
+  SIMULATED_FINDINGS: "Simulated findings loaded",
+  ADMIN_UPLOAD: "Clinical attachment added",
 };

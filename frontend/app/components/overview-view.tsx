@@ -60,7 +60,7 @@ export function OverviewView({ m }: { m: any }) {
             <Empty
               icon="review"
               title="Your review queue is clear"
-              description="Generate a draft from an encounter when the notes and clinical inputs are ready."
+              description="Generate a draft from a consultation when the notes and clinical inputs are ready."
               action={
                 <Link href="/patients" className="btn primary">
                   Open My Patients <Icon name="arrow" size={16} />
@@ -77,7 +77,7 @@ export function OverviewView({ m }: { m: any }) {
         <PageHeading
           eyebrow="Longitudinal records"
           title="Patient Records"
-          description="Approved clinical decisions across your patients. Open an encounter for its full audit trail."
+          description="Approved clinical decisions across your patients. Open a consultation for its full audit trail."
         />
         <div className="searchbar">
           <Icon name="search" />
@@ -145,7 +145,7 @@ export function OverviewView({ m }: { m: any }) {
         <PageHeading
           eyebrow="Patient directory"
           title="My Patients"
-          description="Find a patient, review their history and open an encounter."
+          description="Find a patient, review their history and open a consultation."
           action={
             <span className="soft-label">
               <Icon name="shield" size={16} />
@@ -181,7 +181,7 @@ export function OverviewView({ m }: { m: any }) {
             <Empty
               icon="patients"
               title="No patients assigned"
-              description="No patients assigned. Newly registered physicians start with an empty list. Use a demo physician account to explore existing records."
+              description="No patients are assigned to this physician account. Contact an administrator to assign a patient."
             />
           ) : !filtered.length ? (
             <Empty
@@ -209,7 +209,7 @@ export function OverviewView({ m }: { m: any }) {
                   </div>
                   <p>{p.info.replace("Synthetic record only. ", "")}</p>
                   <span className="encounter-count">
-                    {p.encounter_count} encounters
+                    {p.encounter_count} consultations
                   </span>
                   <span className="row-open">
                     Open Patient
@@ -222,7 +222,7 @@ export function OverviewView({ m }: { m: any }) {
         </div>
         <div className="quiet-note">
           <Icon name="info" size={16} />
-          Patient assignments are provided by the local demo dataset. New
+          Patient assignments are managed by an administrator. New physician
           accounts have no assigned records.
         </div>
       </>
@@ -244,7 +244,7 @@ export function OverviewView({ m }: { m: any }) {
       <PageHeading
         eyebrow="Workspace overview"
         title="Dashboard"
-        description={`Welcome back, ${m.user.name}. Pick up an encounter or find a patient.`}
+        description={`Welcome back, ${m.user.name}. Review active consultations and recent patient activity.`}
         action={
           <Link href="/patients" className="btn primary">
             <Icon name="patients" size={18} />
@@ -255,8 +255,8 @@ export function OverviewView({ m }: { m: any }) {
       <div className="metrics">
         {[
           ["Assigned patients", metrics.patients, "patients", "/patients"],
-          ["Stored encounters", metrics.encounters, "records", "/patients"],
-          ["Awaiting review", metrics.pending, "review", "/reviews"],
+          ["Consultations", metrics.encounters, "records", "/patients"],
+          ["Pending reviews", metrics.pending, "review", "/reviews"],
           ["Approved decisions", metrics.approved, "shield", "/records"],
         ].map(([label, value, icon, href]) => (
           <Link href={String(href)} className="metric-card" key={String(label)}>
@@ -273,23 +273,23 @@ export function OverviewView({ m }: { m: any }) {
         <div className="stack">
           <section className="workspace-banner">
             <span className="eyebrow">
-              {m.lastEncounter ? "Continue your work" : "Start an encounter"}
+              {m.lastEncounter ? "Active consultation" : "Patient care"}
             </span>
             <h2>
               {m.lastEncounter
                 ? m.lastEncounter.name
-                : "A clear path from consultation to decision"}
+                : "No consultation is currently in progress"}
             </h2>
             <p>
               {m.lastEncounter
-                ? "Return to the last encounter you opened. Saved information is ready to review."
-                : "Choose a patient to review history, record a consultation and prepare a draft for your approval."}
+                ? "Continue from the latest saved step. Your consultation information is ready."
+                : "Open a patient record to review scheduled consultations and clinical information."}
             </p>
             <Link
               className="btn primary"
               href={m.lastEncounter?.href || "/patients"}
             >
-              {m.lastEncounter ? "Resume encounter" : "Find a patient"}
+              {m.lastEncounter ? "Resume consultation" : "View patients"}
               <Icon name="arrow" size={17} />
             </Link>
             <span className="banner-mark">
@@ -299,8 +299,8 @@ export function OverviewView({ m }: { m: any }) {
           <section className="panel">
             <div className="panel-heading">
               <div>
-                <h2>Encounter worklist</h2>
-                <p>Most recent stored encounter dates</p>
+                <h2>Consultations</h2>
+                <p>Active and recent patient consultations</p>
               </div>
               <Link className="text-link" href="/patients">
                 View patients <Icon name="arrow" size={15} />
@@ -311,56 +311,19 @@ export function OverviewView({ m }: { m: any }) {
             ) : (
               <Empty
                 icon="patients"
-                title="No encounters to display"
-                description="No patients assigned. Sign in with a demo physician to explore the workflow."
+                title="No consultations to display"
+                description="No consultations are assigned. Contact an administrator to create and assign one."
               />
             )}
           </section>
         </div>
         <aside className="stack">
-          <section className="panel">
+          <section className="panel dashboard-activity">
             <div className="panel-heading">
-              <h2>Your workflow</h2>
-              <Link
-                className="icon-button"
-                aria-label="Open workflow guide"
-                href="/guide"
-              >
-                <Icon name="help" size={18} />
-              </Link>
-            </div>
-            <ol className="workflow-guide">
-              {[
-                [
-                  "Review the patient",
-                  "Choose the right patient and encounter.",
-                ],
-                [
-                  "Document the consultation",
-                  "Record, correct and save your notes.",
-                ],
-                [
-                  "Add clinical inputs",
-                  "Save documents, labs and medications.",
-                ],
-                [
-                  "Review and decide",
-                  "Inspect the draft, then modify, reject or approve.",
-                ],
-              ].map(([title, desc], i) => (
-                <li key={title}>
-                  <span>{i + 1}</span>
-                  <div>
-                    <strong>{title}</strong>
-                    <p>{desc}</p>
-                  </div>
-                </li>
-              ))}
-            </ol>
-          </section>
-          <section className="panel">
-            <div className="panel-heading">
-              <h2>Recent activity</h2>
+              <div>
+                <h2>Recent activity</h2>
+                <p>Latest saved clinical actions</p>
+              </div>
               <Icon name="clock" size={18} />
             </div>
             {!data?.activity.length ? (
@@ -427,14 +390,16 @@ export function PatientDetail({ m }: { m: any }) {
           <p>{p.info.replace("Synthetic record only. ", "")}</p>
           <div className="summary-foot">
             <Icon name="shield" size={18} />
-            <p>Confirm this patient's identity before opening an encounter.</p>
+            <p>
+              Confirm this patient's identity before opening a consultation.
+            </p>
           </div>
         </aside>
         <section className="panel">
           <div className="panel-heading">
             <div>
-              <h2>Encounter history</h2>
-              <p>Select the visit you want to work on.</p>
+              <h2>Consultation history</h2>
+              <p>Select a consultation and review its saved progress.</p>
             </div>
             <span className="count-tag">{m.patientData.encounters.length}</span>
           </div>
@@ -444,18 +409,35 @@ export function PatientDetail({ m }: { m: any }) {
                 <span className="timeline-dot" />
                 <div className="toolbar">
                   <div>
-                    <span className="eyebrow">{formatDate(e.date)}</span>
+                    <div className="toolbar consultation-status-line">
+                      <span className="eyebrow">{formatDate(e.date)}</span>
+                      <Status value={e.lifecycle} />
+                    </div>
                     <h3>{e.title}</h3>
                     <p className="muted">
-                      Encounter {e.id}
+                      Consultation {e.id}
                       {i === 0 ? " · Most recent stored visit" : ""}
                     </p>
+                    <div className="history-progress compact">
+                      {[
+                        ["Notes", e.note_count > 0],
+                        ["Inputs", e.input_count > 0],
+                        ["Review", e.draft_count > 0],
+                        ["Decision", e.decision_count > 0],
+                      ].map(([label, done]: any) => (
+                        <span className={done ? "complete" : ""} key={label}>
+                          <Icon name={done ? "check" : "clock"} size={13} />
+                          {label}
+                        </span>
+                      ))}
+                    </div>
                   </div>
                   <Link
-                    className={"btn " + (i === 0 ? "primary" : "")}
+                    className={"btn " + (e.resumable ? "primary" : "")}
                     href={`/patients/${m.pid}/encounters/${e.id}/consultation`}
                   >
-                    Open Encounter <Icon name="arrow" size={16} />
+                    {e.resumable ? "Open Consultation" : "View Consultation"}{" "}
+                    <Icon name="arrow" size={16} />
                   </Link>
                 </div>
               </article>
@@ -472,14 +454,14 @@ function Guide() {
       <PageHeading
         eyebrow="Help and orientation"
         title="Workspace Guide"
-        description="A short guide to completing an encounter in Zeest."
+        description="A short guide to completing a consultation in Zeest."
       />
       <div className="guide-grid">
         {[
           [
             "patients",
-            "1. Choose the right encounter",
-            "Open My Patients, search for a name, then choose the visit from Encounter history. The patient and date stay visible throughout the workflow.",
+            "1. Choose the right consultation",
+            "Open My Patients, search for a name, then choose the visit from Consultation history. The patient and date stay visible throughout the workflow.",
           ],
           [
             "mic",
@@ -488,13 +470,13 @@ function Guide() {
           ],
           [
             "file",
-            "3. Add clinical information",
-            "Use the Imaging, Laboratory and Medication tabs. Save each input before moving on. Uploaded documents are stored, but are not analysed by a clinical model.",
+            "3. Review clinical information",
+            "Use the Imaging, Laboratory, Medication and Documents tabs to review files supplied during consultation setup.",
           ],
           [
             "review",
             "4. Review and decide",
-            "Select a demo scenario, generate a draft and read its evidence and critic. Modify saves a pending revision. Reject records no decision. Approve requires confirmation.",
+            "Select a clinical scenario, generate a simulated draft and read its evidence and critic. Modify saves a pending revision. Reject records no decision. Approve requires confirmation.",
           ],
         ].map(([icon, title, text]) => (
           <section className="panel guide-card" key={title}>
@@ -506,7 +488,7 @@ function Guide() {
           </section>
         ))}
       </div>
-      <Tip title="Understanding this local demo">
+      <Tip title="Understanding clinical assistance">
         Speech recognition, saved records and review actions are functional.
         Clinical findings, draft recommendations, evidence and critic are fixed
         simulations. No clinical accuracy is claimed.
@@ -518,7 +500,7 @@ function Guide() {
           <p>
             Allow microphone permission in your browser and check the Windows
             input device. You can use Upload audio instead. Recording requires
-            localhost.
+            a secure browser context.
           </p>
         </details>
         <details>
@@ -540,7 +522,7 @@ function Guide() {
           <summary>Where are approved decisions?</summary>
           <p>
             Open Patient Records from the sidebar for all accepted decisions, or
-            use the last step within an encounter for its decisions and audit
+            use the last step within a consultation for its decisions and audit
             trail.
           </p>
         </details>
